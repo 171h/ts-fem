@@ -24,6 +24,7 @@ export * from "./NodalLoad";
 export * from "./BeamElementLoad";
 export * from "./BeamConcentratedLoad";
 export * from "./BeamElementUniformEdgeLoad";
+export * from "./BeamElementTrapezoidalEdgeLoad";
 export * from "./BeamTemperatureLoad";
 export * from "./PrescribedDisplacement";
 export * from "./Domain";
