@@ -1,6 +1,7 @@
 import * as math from "mathjs";
 import { BeamElementLoad } from "./BeamElementLoad";
 import { BeamElementUniformEdgeLoad } from "./BeamElementUniformEdgeLoad";
+import { BeamElementTrapezoidalEdgeLoad } from "./BeamElementTrapezoidalEdgeLoad";
 import { Domain } from "./Domain";
 import { NodalLoad } from "./NodalLoad";
 import { PrescribedDisplacement } from "./PrescribedDisplacement";
@@ -36,6 +37,7 @@ export declare class LoadCase {
     getElementLoadsOnElement(e: LabelType): Array<BeamElementLoad>;
     createNodalLoad(node: LabelType, values?: EnumDictionary<DofID, number>): NodalLoad;
     createBeamElementUniformEdgeLoad(elem: LabelType, values: number[], lcs: boolean): BeamElementUniformEdgeLoad;
+    createBeamElementTrapezoidalEdgeLoad(elem: LabelType, startValues: [number, number], endValues: [number, number], lcs: boolean): BeamElementTrapezoidalEdgeLoad;
     createBeamConcentratedLoad(elem: LabelType, values: number[], lcs: boolean): BeamConcentratedLoad;
     createBeamTemperatureLoad(elem: LabelType, values: number[]): BeamTemperatureLoad;
     createPrescribedDisplacement(target: LabelType, values: EnumDictionary<DofID, number>): PrescribedDisplacement;
