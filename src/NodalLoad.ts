@@ -3,7 +3,8 @@ import { Load } from "./Load";
 import { EnumDictionary, DofID, LabelType } from ".";
 
 /**
- * Implementation of concentrated nodal load
+ * 节点集中荷载。
+ * 通过“自由度 -> 数值”的映射方式，在节点的实际自由度顺序上生成等效荷载向量。
  */
 export class NodalLoad extends Load {
   values: EnumDictionary<DofID, number>;
@@ -16,7 +17,10 @@ export class NodalLoad extends Load {
     this.target = node.toString();
     this.values = values;
   }
+
   getLoadVector(): number[] {
+    // 按节点当前参与分析的自由度顺序构造载荷向量。
+    // 未显式给值的自由度默认荷载为 0。
     const dofs = this.domain.solver.getNodeDofIDs(this.target);
     const ans = Array<number>();
     for (const idof of dofs) {
@@ -28,6 +32,7 @@ export class NodalLoad extends Load {
     }
     return ans;
   }
+
   getLocationArray(): number[] {
     return this.domain.solver.getNodeLocationArray(this.target, this.domain.solver.getNodeDofIDs(this.target));
   }

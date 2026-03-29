@@ -1,5 +1,6 @@
 /**
- * Enum to define physical meaning of degrees of freedom (DOFs)
+ * 自由度枚举。
+ * 统一描述节点位移和转角在整个库中的物理含义与编号顺序。
  */
 export enum DofID {
   Dx = 0, // Displacement in x direction
@@ -10,12 +11,18 @@ export enum DofID {
   Rz = 5, // Rotation around z axis
 }
 
+/**
+ * 用枚举值作为键的可选字典类型。
+ * 常用于“按自由度给值”的输入，如节点荷载和规定位移。
+ */
 export type EnumDictionary<T extends string | symbol | number, U> = {
   [K in T]?: U;
 };
 
+/** 标签既可以是数字，也可以是字符串。 */
 export type LabelType = number | string;
 
+/** 对外导出的公共 API 入口。 */
 export * from "./Node";
 export * from "./Element";
 export * from "./Beam2D";

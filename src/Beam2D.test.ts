@@ -4,8 +4,11 @@ import { expect, test } from "vitest";
 import { LinearStaticSolver } from "./LinearStaticSolver";
 import { Beam2D, DofID } from ".";
 
+// 悬臂梁端部同时承受轴向力和竖向力，验证固定端反力是否满足静力平衡。
 test("Simple cantilever", () => {
   const solver = new LinearStaticSolver();
+
+  // 节点 1 固结，节点 2 自由，构成典型悬臂梁模型。
   solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz, DofID.Ry]);
   solver.domain.createNode(2, [2, 0, 0]);
 
@@ -21,11 +24,13 @@ test("Simple cantilever", () => {
 
   const reactions = solver.domain.getNode(1).getReactions(solver.loadCases[0]).values as math.Matrix;
 
+  // 反力与反弯矩应分别平衡外部轴力、剪力和力矩。
   expect(reactions.get([0])).toBe(-1000);
   expect(reactions.get([1])).toBe(-2000);
   expect(reactions.get([2])).toBe(4000);
 });
 
+// 双端铰梁只承受轴向节点荷载，验证端部释放后凝聚单元仍能给出正确轴力。
 test("Simply supported beam - condensed", () => {
   const solver = new LinearStaticSolver();
   solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz]);
@@ -48,10 +53,11 @@ test("Simply supported beam - condensed", () => {
   const e1 = solver.domain.getElement("1") as Beam2D;
   const N = e1.computeNormalForceAt(solver.loadCases[0], 1);
 
-  console.log(e1.computeEndForces(solver.loadCases[0]));
+  // 梁内轴力在任意截面都应保持为常值 1000 N。
   expect(N).toBe(1000);
 });
 
+// 单端释放时，仍应保持与纯轴向问题一致的反力和轴力分布。
 test("Simply supported beam - condensed 2", () => {
   const solver = new LinearStaticSolver();
   solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz]);
@@ -74,10 +80,10 @@ test("Simply supported beam - condensed 2", () => {
   const e1 = solver.domain.getElement("1") as Beam2D;
   const N = e1.computeNormalForceAt(solver.loadCases[0], 1);
 
-  //console.log(e1.computeEndForces(solver.loadCases[0]));
   expect(N).toBe(1000);
 });
 
+// 另一端释放的镜像场景，验证起点铰接时凝聚处理同样正确。
 test("Simply supported beam - condensed 3", () => {
   const solver = new LinearStaticSolver();
   solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz]);
@@ -100,6 +106,5 @@ test("Simply supported beam - condensed 3", () => {
   const e1 = solver.domain.getElement("1") as Beam2D;
   const N = e1.computeNormalForceAt(solver.loadCases[0], 1);
 
-  //console.log(e1.computeEndForces(solver.loadCases[0]));
   expect(N).toBe(1000);
 });

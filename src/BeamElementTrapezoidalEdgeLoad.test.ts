@@ -4,6 +4,7 @@ import { BeamElementTrapezoidalEdgeLoad } from "./BeamElementTrapezoidalEdgeLoad
 import { BeamElementUniformEdgeLoad } from "./BeamElementUniformEdgeLoad";
 import { LinearStaticSolver } from "./LinearStaticSolver";
 
+// 统一构造一根 4 m 的简支梁，供各个梯形荷载测试复用。
 const setupSolver = () => {
     const solver = new LinearStaticSolver();
     solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz]);
@@ -17,6 +18,7 @@ const setupSolver = () => {
     return solver;
 };
 
+// 当起终点强度相等时，梯形荷载应退化为均布荷载。
 test("Trapezoidal load collapses to uniform load when intensities are constant", () => {
     const solver = setupSolver();
     const trapezoidal = new BeamElementTrapezoidalEdgeLoad("1", solver.domain, [10000, 100000], [10000, 100000], true);
@@ -30,6 +32,7 @@ test("Trapezoidal load collapses to uniform load when intensities are constant",
     });
 });
 
+// 校验梯形荷载的固定端节点力公式，以及沿梁轴力/剪力/弯矩/挠度的解析表达式。
 test("Trapezoidal load generates expected nodal actions and responses", () => {
     const solver = setupSolver();
     const startValues: [number, number] = [5000, 20000];
@@ -52,7 +55,7 @@ test("Trapezoidal load generates expected nodal actions and responses", () => {
         expect(value).toBeCloseTo(expectedVector[idx]);
     });
 
-    const xi = 2.0; // meters along the beam
+    const xi = 2.0; // 取跨中位置检查截面力解析值
     const xl = xi / l;
     const deltaFx = endValues[0] - startValues[0];
     const deltaFz = endValues[1] - startValues[1];
@@ -61,6 +64,7 @@ test("Trapezoidal load generates expected nodal actions and responses", () => {
     const expectedV = -(startValues[1] * xi + 0.5 * deltaFz * (xi * xi) / l);
     const expectedM = -(0.5 * startValues[1] * xi * xi + (deltaFz / (6 * l)) * xi * xi * xi);
 
+    // 内力沿程结果应与线性分布荷载的积分表达式一致。
     expect(load.computeBeamNContrib(xi)).toBeCloseTo(expectedN);
     expect(load.computeBeamVContrib(xi)).toBeCloseTo(expectedV);
     expect(load.computeBeamMContrib(xi)).toBeCloseTo(expectedM);
@@ -71,5 +75,6 @@ test("Trapezoidal load generates expected nodal actions and responses", () => {
     const polyLinear = Math.pow(xl, 5) / 120 - Math.pow(xl, 3) / 40 + Math.pow(xl, 2) / 60;
     const expectedW = ((l ** 4) / EI) * (startValues[1] * polyUniform + deltaFz * polyLinear);
 
+    // 挠度附加项采用“均布部分 + 线性变化部分”的组合表达式。
     expect(load.computeBeamDeflectionContrib(xl).w).toBeCloseTo(expectedW);
 });

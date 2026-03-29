@@ -5,12 +5,13 @@ import { Domain } from "./Domain";
 import { LabelType } from ".";
 
 /**
- * Implementation of Beam2d trapezoidal (linearly varying) load
+ * 梁单元梯形分布荷载。
+ * 起点和终点可取不同强度，本质上对应沿单元线性变化的分布荷载。
  */
 export class BeamElementTrapezoidalEdgeLoad extends BeamElementLoad {
-    startValues: [number, number]; // fx, fz at element start
-    endValues: [number, number]; // fx, fz at element end
-    lcs: boolean; // true if values provided in element local c.s.
+    startValues: [number, number]; // 单元起点的 [fx, fz]
+    endValues: [number, number]; // 单元终点的 [fx, fz]
+    lcs: boolean; // true 表示输入值位于单元局部坐标系
 
     constructor(elem: LabelType, domain: Domain, startValues: [number, number], endValues: [number, number], lcs: boolean) {
         super(elem, domain);
@@ -30,6 +31,7 @@ export class BeamElementTrapezoidalEdgeLoad extends BeamElementLoad {
         const start = { fx: this.startValues[0], fz: this.startValues[1] };
         const end = { fx: this.endValues[0], fz: this.endValues[1] };
         if (this.lcs) {
+            // 若输入为局部坐标系荷载，则将起终点强度都旋转到整体坐标系。
             const geo = this.domain.getElement(this.target).computeGeo();
             const cos = geo.dx / geo.l;
             const sin = geo.dz / geo.l;
@@ -45,6 +47,7 @@ export class BeamElementTrapezoidalEdgeLoad extends BeamElementLoad {
         const start = { fx: this.startValues[0], fz: this.startValues[1] };
         const end = { fx: this.endValues[0], fz: this.endValues[1] };
         if (!this.lcs) {
+            // 若输入为整体坐标系荷载，则将起终点强度转换到局部坐标系。
             const geo = this.domain.getElement(this.target).computeGeo();
             const cos = geo.dx / geo.l;
             const sin = geo.dz / geo.l;
@@ -56,7 +59,7 @@ export class BeamElementTrapezoidalEdgeLoad extends BeamElementLoad {
         return { start, end };
     }
 
-    // load vector in local c.s.
+    // 在局部坐标系中计算固定端梁的等效节点力。
     getLoadVectorForClampedBeam(): Array<number> {
         const geo = this.domain.getElement(this.target).computeGeo();
         const l = geo.l;
@@ -87,6 +90,7 @@ export class BeamElementTrapezoidalEdgeLoad extends BeamElementLoad {
         const t = elem.computeT();
         const f = this.getLoadVectorForClampedBeam();
         if (elem.hasHinges()) {
+            // 若存在端部释放，需要按释放自由度做静力凝聚。
             const stiffrec = elem.computeLocalStiffnessMtrx(true);
             let ans = [0, 0, 0, 0, 0, 0];
 
@@ -119,8 +123,9 @@ export class BeamElementTrapezoidalEdgeLoad extends BeamElementLoad {
         const fz0 = intensities.start.fz;
         const fz1 = intensities.end.fz;
         const deltaFz = fz1 - fz0;
-        const xi = xl; // normalized position along the element
+        const xi = xl; // 单元归一化坐标，范围 [0, 1]
 
+        // 线性分布荷载可拆成“均布部分 + 线性变化部分”两项。
         const polyUniform = (Math.pow(xi, 4) / 24 - Math.pow(xi, 3) / 12 + Math.pow(xi, 2) / 24);
         const polyLinear = Math.pow(xi, 5) / 120 - Math.pow(xi, 3) / 40 + Math.pow(xi, 2) / 60;
 

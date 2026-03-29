@@ -4,8 +4,13 @@ import { BeamElementLoad } from "./BeamElementLoad";
 import { Domain } from "./Domain";
 import { LabelType } from ".";
 
+/**
+ * 梁单元温度荷载。
+ * values 约定为 [平均温升, 上缘温度, 下缘温度]，
+ * 分别对应整体热伸长和因温度梯度引起的附加弯矩效应。
+ */
 export class BeamTemperatureLoad extends BeamElementLoad {
-  values: number[]; // fx, fz intensities
+  values: number[];
 
   constructor(elem: LabelType, domain: Domain, values: number[]) {
     super(elem, domain);
@@ -17,7 +22,7 @@ export class BeamTemperatureLoad extends BeamElementLoad {
     this.values = values;
   }
 
-  // in local c.s
+  // 在单元局部坐标系中计算固定端梁温度作用对应的等效节点力。
   getLoadVectorForClampedBeam(): Array<number> {
     const mat = this.domain.getElement(this.target).getMaterial();
     const cs = this.domain.getElement(this.target).getCS();
@@ -29,6 +34,7 @@ export class BeamTemperatureLoad extends BeamElementLoad {
     const iy = cs.iy;
     const h = cs.h;
 
+    // 上下缘温差导致曲率，从而产生一对等值反向端弯矩。
     const dT = this.values[1] - this.values[2];
 
     return [
@@ -50,12 +56,9 @@ export class BeamTemperatureLoad extends BeamElementLoad {
     const t = elem.computeT();
     const f = this.getLoadVectorForClampedBeam();
     if (elem.hasHinges()) {
+      // 若存在端部释放，需要对固定端等效节点力做静力凝聚。
       const stiffrec = elem.computeLocalStiffnessMtrx(true);
       let ans = [0, 0, 0, 0, 0, 0];
-      // following is result of static condensation
-      // ret[ix_(a)] = f[ix_(a)] - dot(dot(kab,linalg.inv(kbb)),f[ix_(b)])
-
-      // fe[ix_(a)] += bl[ix_(a)] - dot(dot(kab,linalg.inv(kbb)),bl[ix_(b)])
 
       const h1 = math.multiply(stiffrec.kab, math.inv(stiffrec.kbb));
       if (stiffrec.b.length == 1) {
@@ -79,6 +82,7 @@ export class BeamTemperatureLoad extends BeamElementLoad {
   }
 
   computeBeamDeflectionContrib(xl: number): { u: number; w: number } {
+    // 温度荷载的影响已体现在等效节点力中，这里不再重复加解析附加项。
     const w = 0.0;
     const u = 0.0;
     return { u: u, w: w };

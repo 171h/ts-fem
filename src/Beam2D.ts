@@ -5,11 +5,13 @@ import { DofID, LabelType } from ".";
 import { Element } from "./Element";
 
 /**
- * Implementation of Timoshenko beam element in 2D (xz plane)
+ * 二维 Timoshenko 梁单元（x-z 平面）。
+ * 单元节点自由度为 [Dx, Dz, Ry]，支持端部铰接释放、局部坐标系变换和质量矩阵计算。
  */
 export class Beam2D extends Element {
-  hinges: [boolean, boolean]; // indicates element hinges
+  hinges: [boolean, boolean]; // 标记起点和终点是否存在弯矩释放
 
+  // false 时使用一致质量矩阵，true 时使用集中质量矩阵。
   diagonalMassMatrix = false;
 
   /**
@@ -37,6 +39,8 @@ export class Beam2D extends Element {
   }
 
   getLocationArray() {
+    // 梁单元两端节点都使用 [Dx, Dz, Ry] 三个自由度，
+    // 定位向量顺序即为单元局部矩阵/向量的自由度顺序。
     let loc = Array<number>();
     for (const n of this.nodes) {
       //console.log("Element ", this.label, "Node ", n, "loc:", solver.getNodeLocationArray(n, [DofID.Dx, DofID.Dz, DofID.Ry]));
@@ -44,9 +48,10 @@ export class Beam2D extends Element {
     }
     return loc;
   }
-  // evaluates l, dx, dz
+
   /**
-   * Returns Beam2D geometry object containing l: length, dx: element projection in to x axis, dz: element projection in z axis
+    * 计算单元几何信息。
+    * 返回长度 l 以及单元在整体 x、z 方向上的投影 dx、dz。
    */
   computeGeo() {
     const c1: Array<number> = this.domain.getNode(this.nodes[0]).coords;
@@ -57,13 +62,14 @@ export class Beam2D extends Element {
     return { l: l, dx: dx, dz: dz };
   }
   /**
-   * Returns tru if element has start or end hinge (or both)
+   * 判断单元任一端是否存在弯矩释放。
    */
   hasHinges() {
     return this.hinges[0] || this.hinges[1];
   }
   /**
-   * Computes element transformation matrix from local to global (nodal) c.s.
+   * 计算单元从节点/整体坐标系到单元局部坐标系的变换矩阵。
+   * 若节点定义了局部坐标系，则还会额外叠乘节点局部坐标系到整体坐标系的变换。
    */
   computeT(): math.Matrix {
     const geo = this.computeGeo();
@@ -79,6 +85,7 @@ export class Beam2D extends Element {
     ]); // rl = t*rg;
 
     if (this.domain.getNode(this.nodes[0]).hasLcs() || this.domain.getNode(this.nodes[1]).hasLcs()) {
+      // 先构造“节点局部 -> 整体”的块对角变换矩阵，再与单元方向变换相乘。
       let T_n2g = math.zeros(6); // rg = T_n2g rn
       T_n2g = math.subset(
         T_n2g,
@@ -95,8 +102,8 @@ export class Beam2D extends Element {
     return t;
   }
   /**
-   * Computes Beam2D local stifness matrix
-   * @param retCondenseSubMats when true, extended info on condensed DOFs is provided
+    * 计算梁单元局部刚度矩阵。
+    * 当存在端部铰接时，会通过静力凝聚消去释放弯矩自由度。
    */
   computeLocalStiffnessMtrx(retCondenseSubMats: boolean = false) {
     const geo = this.computeGeo();
@@ -110,6 +117,9 @@ export class Beam2D extends Element {
     const l3 = l2 * l;
     const fi = (12 * eiy) / (cs.k * mat.g * cs.a * l * l);
     const fi1 = 1 + fi;
+
+    // Timoshenko 梁局部刚度矩阵。
+    // 其中 fi 为剪切变形修正项；当剪切刚度趋于无穷时可退化接近 Euler-Bernoulli 梁。
     const answer = math.matrix([
       [ea / l, 0, 0, -ea / l, 0, 0],
       [0, (12 * eiy) / l3 / fi1, (-6 * eiy) / l2 / fi1, 0, (-12 * eiy) / l3 / fi1, (-6 * eiy) / l2 / fi1],
@@ -119,8 +129,8 @@ export class Beam2D extends Element {
       [0, (-6 * eiy) / l2 / fi1, ((2 - fi) * eiy) / l / fi1, 0, (6 * eiy) / l2 / fi1, ((4 + fi) * eiy) / l / fi1],
     ]);
 
-    // static condensation if some ends are hinges
-    // a=nonzero force value, b=zero force(moment) value
+    // 若端部存在铰接，需要对释放弯矩自由度做静力凝聚。
+    // a: 保留自由度索引；b: 被消去的释放弯矩自由度索引。
     if (this.hasHinges()) {
       if (this.hinges[0] && this.hinges[1]) {
         var a = [0, 1, 3, 4];
@@ -135,6 +145,8 @@ export class Beam2D extends Element {
       const kaa = answer.subset(math.index(a, a));
       const kab = answer.subset(math.index(a, b));
       const kbb = answer.subset(math.index(b, b));
+
+      // Kcond = Kaa - Kab * Kbb^-1 * Kba
       const k2 = math.subtract(kaa, math.multiply(math.multiply(kab, math.inv(kbb)), math.transpose(kab)));
 
       let answer2 = math.zeros(6, 6);
@@ -156,8 +168,8 @@ export class Beam2D extends Element {
     return { answer: answer };
   }
   /**
-   * Computes local initial stress matrix
-   * @param N normal force
+    * 计算局部初应力矩阵（几何刚度矩阵）。
+    * 常用于稳定分析或考虑轴力对弯曲刚度的影响。
    */
   computeLocalInitialStressMtrx(N: number) {
     const geo = this.computeGeo();
@@ -199,8 +211,7 @@ export class Beam2D extends Element {
     answer[3][0] = -cc;
     answer[3][3] = cc;
 
-    // static condensation if some ends are hinges
-    // a=nonzero force value, b=zero force(moment) value
+    // 若存在端部释放，几何刚度矩阵同样需要按释放自由度做凝聚。
     if (this.hasHinges()) {
       const stiffrec = this.computeLocalStiffnessMtrx(true);
       const asize: number = math.size(stiffrec.a)[0];
@@ -226,8 +237,8 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes Beam2D local stifness matrix
-   * @param retCondenseSubMats when true, extended info on condensed DOFs is provided
+    * 计算局部质量矩阵。
+    * 可在一致质量矩阵和集中质量矩阵之间切换。
    */
   computeLocalMassMatrix(retCondenseSubMats: boolean = false) {
     const geo = this.computeGeo();
@@ -247,7 +258,7 @@ export class Beam2D extends Element {
             [0, (11/210+11/120*fi+1/24*fi2)*l, (1/105+1/60*fi+1/120*fi2)*l2,  0, (13/420+3/40*fi+1/24*fi2)*l, -(1/140+1/60*fi+1/120*fi2)*l2],
             [0, 0, 0, 0, 0, 0],
             [0, 9/70+3/10*fi+1/6*fi2,          (13/420+3/40*fi+1/24*fi2)*l,   0, 13/35+7/10*fi+1/3*fi2,        (11/210+11/120*fi+1/24*fi2)*l],
-            [0, -(13/420+3/40*fi+1/24*fi2)*l,  -(1/140+1/60*fi+1/120*fi2)*l2, 0, (11/210+11/120*fi+1/24*fi2)*l, (1/105+1/60*fi+1/120*fi2)*l2],     
+            [0, -(13/420+3/40*fi+1/24*fi2)*l,  -(1/140+1/60*fi+1/120*fi2)*l2, 0, (11/210+11/120*fi+1/24*fi2)*l, (1/105+1/60*fi+1/120*fi2)*l2],
         ]);
 
         const M_CR = math.matrix([
@@ -261,7 +272,7 @@ export class Beam2D extends Element {
 
         return math.add(math.multiply((mat.d*cs.a*l)/((1+fi)*(1+fi)),M_CT), math.multiply(mat.d*cs.iy/((1+fi)*(1+fi)*l),M_CR));*/
 
-    // Consistent mass matrix
+    // 一致质量矩阵：更适合动力分析与模态计算。
     if (!this.diagonalMassMatrix)
       return math.multiply(
         (mat.d * cs.a * l) / 420,
@@ -275,7 +286,7 @@ export class Beam2D extends Element {
         ])
       );
 
-    // Diagonal mass matrix
+    // 集中质量矩阵：数值上更简单，但模态精度通常略低。
     const alpha = 1 / 78;
     return math.multiply(
       mat.d * cs.a * l,
@@ -291,7 +302,8 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Evaluate element stiffness matrix in global c.s.
+    * 计算整体坐标系下的单元刚度矩阵。
+    * 实现方式为 K = T^T * Kl * T。
    */
   computeStiffness() {
     const geo = this.computeGeo();
@@ -303,7 +315,7 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Evaluate element mass matrix in global c.s.
+    * 计算整体坐标系下的单元质量矩阵。
    */
   computeMassMatrix() {
     const geo = this.computeGeo();
@@ -315,8 +327,7 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Evaluates initial stress matrix in global c.s.
-   * @param N Element normal force
+    * 计算整体坐标系下的初应力矩阵。
    */
   computeInitialStressMatrix(N: number) {
     const kl = this.computeLocalInitialStressMtrx(N);
@@ -326,8 +337,8 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes element end displacement vector (in element local c.s.)
-   * @param r global vector of unknowns
+    * 计算单元端部位移向量，并转换到单元局部坐标系。
+    * 若存在端部释放，还会把被凝聚掉的释放自由度位移反算出来。
    */
   computeEndDisplacement(lc: LoadCase) {
     const t = this.computeT();
@@ -337,6 +348,9 @@ export class Beam2D extends Element {
     if (this.hasHinges()) {
       const stiffrec = this.computeLocalStiffnessMtrx(true);
       let bl = math.zeros(6);
+
+      // 把作用在该单元上的所有荷载固定端等效节点力累加起来，
+      // 用于恢复释放自由度上的位移。
       for (const load of lc.getElementLoadsOnElement(this.label)) {
         bl = math.add(bl, load.getLoadVectorForClampedBeam()) as number[];
       }
@@ -363,8 +377,8 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes element end forces (in element local c.s.)
-   * @param lc load case reference
+    * 计算单元端力向量，并转换到单元局部坐标系。
+    * 结果由单元刚度贡献和单元荷载固定端力共同组成。
    */
   computeEndForces(lc: LoadCase) {
     const t = this.computeT();
@@ -375,12 +389,14 @@ export class Beam2D extends Element {
     let fe = math.multiply(stiffrec.answer, re) as math.Matrix;
 
     let bl = math.zeros(6) as math.Matrix;
+
+    // 累加该单元上所有单元荷载对应的固定端节点力。
     for (const load of lc.getElementLoadsOnElement(this.label)) {
       bl = math.add(bl, load.getLoadVectorForClampedBeam()) as math.Matrix;
     }
 
     if (this.hasHinges()) {
-      // fe[ix_(a)] += bl[ix_(a)] - dot(dot(kab,linalg.inv(kbb)),bl[ix_(b)])
+      // 对存在释放的情况，仅保留凝聚后的自由度内力贡献。
 
       const h1 = math.multiply(stiffrec.kab, math.inv(stiffrec.kbb));
 
@@ -405,9 +421,8 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes nseg+1 values of local deflections
-   * @param lc reference to load case
-   * @param nseg deflection will be evaluated in nseg+1 points generated along the element
+    * 计算单元局部坐标系下的位移曲线。
+    * 结果由单元端位移插值项与单元荷载解析附加项两部分组成。
    */
   computeLocalDefl(lc: LoadCase, nseg: number) {
     const rl = this.computeEndDisplacement(lc);
@@ -419,14 +434,16 @@ export class Beam2D extends Element {
     const eloads = lc.getElementLoadsOnElement(this.label);
     for (let iseg = 0; iseg <= nseg; iseg++) {
       const xl = iseg / nseg; // [0,1]
-      // components from end displacements
+
+      // 先按 Hermite 形函数插值得到由端位移引起的位移场。
       let wl =
         (1.0 - 3.0 * xl * xl + 2.0 * xl * xl * xl) * rl.get([1]) +
         l * (-xl + 2.0 * xl * xl - xl * xl * xl) * rl.get([2]) +
         (3.0 * xl * xl - 2.0 * xl * xl * xl) * rl.get([4]) +
         l * (xl * xl - xl * xl * xl) * rl.get([5]);
       let ul = (1 - xl) * rl.get([0]) + xl * rl.get([3]);
-      // add contributions of loads
+
+      // 再叠加各类单元荷载对精确位移曲线的解析贡献。
       for (const load of eloads) {
         const c = load.computeBeamDeflectionContrib(xl);
         wl += c.w;
@@ -439,9 +456,7 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes nseg+1 values of global deflections
-   * @param lc reference to load case
-   * @param nseg deflection will be evaluated in nseg+1 points generated along the element
+    * 将局部位移曲线旋转到整体坐标系下。
    */
   computeGlobalDefl(lc: LoadCase, nseg: number) {
     const ld = this.computeLocalDefl(lc, nseg);
@@ -458,8 +473,8 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes element end displacement vector (in element local c.s.)
-   * @param r global vector of unknowns
+    * 计算某一振型对应的单元端部局部位移向量。
+    * 逻辑与静力位移恢复类似，但数据来自模态向量而非工况位移解。
    */
   computeEndDisplacementEigenMode(lc: LoadCase, ntheig: number) {
     const t = this.computeT();
@@ -492,9 +507,7 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes nseg+1 values of local deflections
-   * @param lc reference to load case
-   * @param nseg deflection will be evaluated in nseg+1 points generated along the element
+    * 计算某一振型在单元局部坐标系下的模态位移曲线。
    */
   computeLocalEigenMode(lc: LoadCase, ntheig: number, nseg: number) {
     const rl = this.computeEndDisplacementEigenMode(lc, ntheig);
@@ -519,10 +532,7 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes nseg+1 values of global deflections
-   * @param lc reference to load case
-   * @param ntheig n-th eigen value
-   * @param nseg deflection will be evaluated in nseg+1 points generated along the element
+    * 将局部模态位移曲线旋转到整体坐标系下。
    */
   computeGlobalEigenMode(lc: LoadCase, ntheig: number, nseg: number) {
     const ld = this.computeLocalEigenMode(lc, ntheig, nseg);
@@ -539,13 +549,10 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes the values of normal force along element
-   * @param lc load case reference
-   * @param nseg number of points-1
+   * 计算单元轴力图。
+   * 以内力端值为基础，再叠加单元荷载沿程的解析贡献。
    */
   computeNormalForce(lc: LoadCase, nseg: number) {
-    //Computes >=nseg+1 values of local normal force,
-    //returns list of distances, values N(x) and where labels should be  plotted
     const F = this.computeEndForces(lc);
     const geo = this.computeGeo();
     const x = [];
@@ -580,13 +587,9 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes the values of shear force along element
-   * @param lc load case reference
-   * @param nseg number of points-1
+   * 计算单元剪力图。
    */
   computeShearForce(lc: LoadCase, nseg: number) {
-    //Computes >=nseg+1 values of local normal force,
-    //returns list of distances, values N(x) and where labels should be  plotted
     const F = this.computeEndForces(lc);
     const geo = this.computeGeo();
     const x = [];
@@ -621,13 +624,9 @@ export class Beam2D extends Element {
   }
 
   /**
-   * Computes the values of bending moment along element
-   * @param lc load case reference
-   * @param nseg number of points-1
+   * 计算单元弯矩图。
    */
   computeBendingMoment(lc: LoadCase, nseg: number) {
-    //Computes >=nseg+1 values of local bending moment,
-    //returns list of distances, values N(x) and where labels should be  plotted
     const F = this.computeEndForces(lc);
     const geo = this.computeGeo();
     const x = [];

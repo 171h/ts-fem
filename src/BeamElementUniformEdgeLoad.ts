@@ -5,11 +5,12 @@ import { Domain } from "./Domain";
 import { LabelType } from ".";
 
 /**
- * Implementation of Beam2d uniform load
+ * 梁单元均布荷载。
+ * 支持局部或整体坐标系输入，并提供固定端等效节点力及对位移、内力图的解析贡献。
  */
 export class BeamElementUniformEdgeLoad extends BeamElementLoad {
-  values: number[]; // fx, fz intensities
-  lcs: boolean; // true if values in element local c.s (along length)
+  values: number[]; // [fx, fz] 方向上的均布荷载强度
+  lcs: boolean; // true 表示输入值位于单元局部坐标系
   constructor(elem: LabelType, domain: Domain, values: number[], lcs: boolean) {
     super(elem, domain);
     this.values = values;
@@ -24,7 +25,7 @@ export class BeamElementUniformEdgeLoad extends BeamElementLoad {
     const fx = this.values[0]; // intensity in x-local
     const fz = this.values[1]; // intensity in z-local
     if (this.lcs) {
-      // transrform intensities to global
+      // 若输入为局部坐标系荷载，则先转换到整体坐标系。
       const geo = this.domain.getElement(this.target).computeGeo();
       const cos = geo.dx / geo.l;
       const sin = geo.dz / geo.l;
@@ -43,7 +44,7 @@ export class BeamElementUniformEdgeLoad extends BeamElementLoad {
     const cos = dx / l;
     const sin = dz / l;
     if (!this.lcs) {
-      // transform global intensities to local c.s.
+      // 若输入为整体坐标系荷载，则转换到单元局部坐标系。
       return {
         fx: fx * cos + fz * sin,
         fz: -fx * sin + fz * cos,
@@ -53,7 +54,7 @@ export class BeamElementUniformEdgeLoad extends BeamElementLoad {
     }
   }
 
-  // in local c.s
+  // 在单元局部坐标系中计算固定端梁的等效节点力。
   getLoadVectorForClampedBeam(): Array<number> {
     const geo = this.domain.getElement(this.target).computeGeo();
     const f = this.getLocalIntensities();
@@ -73,12 +74,9 @@ export class BeamElementUniformEdgeLoad extends BeamElementLoad {
     const t = elem.computeT();
     const f = this.getLoadVectorForClampedBeam();
     if (elem.hasHinges()) {
+      // 若存在端部释放，需要按释放自由度做静力凝聚。
       const stiffrec = elem.computeLocalStiffnessMtrx(true);
       let ans = [0, 0, 0, 0, 0, 0];
-      // following is result of static condensation
-      // ret[ix_(a)] = f[ix_(a)] - dot(dot(kab,linalg.inv(kbb)),f[ix_(b)])
-
-      // fe[ix_(a)] += bl[ix_(a)] - dot(dot(kab,linalg.inv(kbb)),bl[ix_(b)])
 
       const h1 = math.multiply(stiffrec.kab, math.inv(stiffrec.kbb));
 
@@ -103,6 +101,7 @@ export class BeamElementUniformEdgeLoad extends BeamElementLoad {
   }
 
   computeBeamDeflectionContrib(xl: number): { u: number; w: number } {
+    // 对简支/固定边界之外的精确挠度后处理，附加均布荷载的解析项。
     const f = this.getLocalIntensities();
     const elem = this.domain.elements.get(this.target);
     const geo = elem.computeGeo();
@@ -113,14 +112,17 @@ export class BeamElementUniformEdgeLoad extends BeamElementLoad {
     const u = 0.0;
     return { u: u, w: w };
   }
+
   computeBeamNContrib(x: number): number {
     const f = this.getLocalIntensities();
     return -f.fx * x;
   }
+
   computeBeamVContrib(x: number): number {
     const f = this.getLocalIntensities();
     return -f.fz * x;
   }
+
   computeBeamMContrib(x: number): number {
     const f = this.getLocalIntensities();
     return (-f.fz * x * x) / 2.0;

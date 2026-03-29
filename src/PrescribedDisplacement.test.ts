@@ -4,6 +4,7 @@ import { expect, test } from "vitest";
 import { LinearStaticSolver } from "./LinearStaticSolver";
 import { Beam2D, DofID } from ".";
 
+// 通过中间节点施加规定位移，验证规定位移会被正确装配为等效内力并传递到相邻单元。
 test("1 uknown - Cantilever-hinge", () => {
   const solver = new LinearStaticSolver();
   solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz, DofID.Ry]);
@@ -20,10 +21,10 @@ test("1 uknown - Cantilever-hinge", () => {
 
   solver.solve();
 
-  // N/A = eps E => N = EA * eps
+  // 根据 N / A = E * eps，可得轴力 N = EA * ΔL / L。
   const reactions1 = solver.domain.getNode(1).getReactions(solver.loadCases[0]).values as math.Matrix;
   const reactions2 = solver.domain.getNode(2).getReactions(solver.loadCases[0]).values as math.Matrix;
 
-  console.log(reactions1);
+  // 左侧单元长度为 3 m，因此理论反力为 EA * 0.001 / 3。
   expect(reactions1.get([0])).toBe((-1000e6 * 0.48 * 0.001) / 3);
 });

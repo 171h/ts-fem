@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 import { LinearStaticSolver } from "./LinearStaticSolver";
 import { DofID } from ".";
 
+// 简支梁承受局部坐标系下的均布轴向力和横向力，验证反力、位移及内力图。
 test("Simply supported beam (condensed) - UDL", () => {
   const solver = new LinearStaticSolver();
   solver.domain.createNode(1, [0, 0, 0], [DofID.Dx, DofID.Dz]);
@@ -22,6 +23,7 @@ test("Simply supported beam (condensed) - UDL", () => {
   const reactions1 = solver.domain.getNode(1).getReactions(solver.loadCases[0]).values as math.Matrix;
   const reactions2 = solver.domain.getNode(2).getReactions(solver.loadCases[0]).values as math.Matrix;
 
+  // 起点节点同时承担全部轴向合力以及一半横向合力。
   expect(reactions1.get([0])).toBeCloseTo(-10000 * 4);
   expect(reactions1.get([1])).toBeCloseTo(-200000);
 
@@ -31,6 +33,7 @@ test("Simply supported beam (condensed) - UDL", () => {
   const N = beam.computeNormalForce(solver.loadCases[0], 2);
   const V = beam.computeShearForce(solver.loadCases[0], 2);
 
+  // 跨中挠度、弯矩和轴力采用经典简支梁解析解作为校验基准。
   expect(deflection.w[1]).toBeCloseTo((5 * (100000 * 4 * 4 * 4 * 4)) / 384 / 210000e6 / 8.356e-5);
   expect(deflection.u[1]).toBeCloseTo(0);
 

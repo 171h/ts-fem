@@ -5,12 +5,12 @@ import { Domain } from "./Domain";
 import { LabelType } from ".";
 
 /**
- * Implementation of Beam2d concentrated load
- * TODO: only Fx, Fz now - add concentrated moment support
+ * 梁单元集中荷载。
+ * 当前支持局部或整体坐标系下给定的轴向力和横向力，并可换算为梁单元等效节点力。
  */
 export class BeamConcentratedLoad extends BeamElementLoad {
-  values: number[]; // Fx, Fz, My, distance x
-  lcs: boolean;
+  values: number[]; // [Fx, Fz, My, x]，其中 x 为距单元起点的距离
+  lcs: boolean; // true 表示输入值定义在单元局部坐标系中
 
   constructor(elem: LabelType, domain: Domain, values: number[], lcs: boolean) {
     super(elem, domain);
@@ -22,10 +22,12 @@ export class BeamConcentratedLoad extends BeamElementLoad {
     this.values = values;
     this.lcs = lcs;
   }
+
   getGlobalIntensities() {
     const fx = this.values[0];
     const fz = this.values[1];
     if (this.lcs) {
+      // 若输入位于局部坐标系，则先旋转到整体坐标系，便于整体结果解释。
       const geo = this.domain.getElement(this.target).computeGeo();
       const cos = geo.dx / geo.l;
       const sin = geo.dz / geo.l;
@@ -34,6 +36,7 @@ export class BeamConcentratedLoad extends BeamElementLoad {
       return { fx: fx, fz: fz, my: 0.0 };
     }
   }
+
   getLocalIntensities() {
     const fx = this.values[0];
     const fz = this.values[1];
@@ -44,6 +47,8 @@ export class BeamConcentratedLoad extends BeamElementLoad {
     const cos = dx / l;
     const sin = dz / l;
     if (!this.lcs) {
+      // 若输入位于整体坐标系，则转换到单元局部坐标系，
+      // 后续固定端等效节点力公式都在局部坐标系中使用。
       return {
         fx: fx * cos + fz * sin,
         fz: -fx * sin + fz * cos,
@@ -54,6 +59,7 @@ export class BeamConcentratedLoad extends BeamElementLoad {
   }
 
   getLoadVectorForClampedBeam(): Array<number> {
+    // 基于固定端梁理论，计算集中力作用下的局部等效节点力。
     const geo = this.domain.getElement(this.target).computeGeo();
     const f = this.getLocalIntensities();
     const fx = f.fx;
@@ -82,6 +88,7 @@ export class BeamConcentratedLoad extends BeamElementLoad {
     const t = elem.computeT();
     const f = this.getLoadVectorForClampedBeam();
     if (elem.hasHinges()) {
+      // 若单元端部存在释放，需要把固定端等效节点力做一次静力凝聚。
       const stiffrec = elem.computeLocalStiffnessMtrx(true);
       let ans = [0, 0, 0, 0, 0, 0];
 
@@ -107,6 +114,7 @@ export class BeamConcentratedLoad extends BeamElementLoad {
   }
 
   computeBeamDeflectionContrib(xl: number): { u: number; w: number } {
+    // 计算该集中荷载对梁精确挠度曲线的附加贡献。
     const f = this.getLocalIntensities();
     const elem = this.domain.elements.get(this.target)!;
     const geo = elem.computeGeo();
@@ -142,16 +150,19 @@ export class BeamConcentratedLoad extends BeamElementLoad {
 
     return { u: u, w: w };
   }
+
   computeBeamNContrib(x: number): number {
     const f = this.getLocalIntensities();
     const a = this.values[3];
     return x < a ? 0 : -f.fx;
   }
+
   computeBeamVContrib(x: number): number {
     const f = this.getLocalIntensities();
     const a = this.values[3];
     return x < a ? 0 : -f.fz;
   }
+
   computeBeamMContrib(x: number): number {
     const f = this.getLocalIntensities();
     const a = this.values[3];
